@@ -16,7 +16,13 @@
 //     stretch below trend, not a wiggle near the highs), and
 //   * the fall is over: the last 3 bars together are flat or better and
 //     the latest bar did not close down (MOD_BPS / LAST_BPS).
-// Entry B — late safety net: if nothing has traded by LATE_BAR and the
+// Entry B — a second, looser dip tier: the same stabilisation test, but
+// only DROP2_BPS below the rolling high and BELOW2_EMA_BPS below trend,
+// so it also catches the smaller second dip the window holds (a -55 bps
+// dip that rebounds +139 bps from its fill). Tier B is cut off at
+// TIER2_CUTOFF_SEQ: late-window dips in this falling market have no
+// rebound left before the final flatten and are negative-EV after costs.
+// Entry C — late safety net: if nothing has traded by LATE_BAR and the
 // price sits well below its long EMA with stabilising bars, buy once, so
 // the bot still makes its 1 guardrail trade on a race window with no
 // washout. It never fires after entry A traded, and no entry is taken in
@@ -32,6 +38,14 @@
 // After any exit a short cooldown blocks an immediate re-buy of the same
 // falling knife.
 //
+// v2 vs v1: the v1 trade bought bar 72 and sold at TP +100 bps, but the
+// fill (bar 73 open, near the trough) peaked at +152 bps — the +100 bps
+// TP left ~50 bps on the table. v2 buys one bar earlier (MOD_BPS /
+// LAST_BPS loosened to -12 / -6: bar 70's 3-bar drift is -7.9 bps, so
+// v1's flat-or-better test fired a bar late) and takes profit at +140
+// bps, and adds tier B so the bot also trades the second dip instead of
+// sitting out the rest of the window after one trade.
+//
 // Long only, one position, full equity per trade, deterministic: no wall
 // clock, no network, no environment, no randomness (hello.seed unused).
 
@@ -43,16 +57,22 @@ const SYMBOL = 'CBBTC';
 const HIGH_BARS = 45;
 const DROP_BPS = 60;
 const BELOW_EMA_BPS = 25;
-const MOD_BPS = 0; // worst allowed 3-bar return at entry (bps)
-const LAST_BPS = 0; // worst allowed latest-bar return at entry (bps)
+const MOD_BPS = -12; // worst allowed 3-bar return at entry (bps)
+const LAST_BPS = -6; // worst allowed latest-bar return at entry (bps)
 const EMA_TREND = 20;
 const EMA_LONG = 60;
-const TP_BPS = 100;
+const TP_BPS = 140;
 const STOP_BPS = 200;
-const PEAK_BPS = 80;
-const TRAIL_BPS = 35;
+const PEAK_BPS = 100;
+const TRAIL_BPS = 40;
 const HOLD_MAX = 120;
 const COOLDOWN_BARS = 3;
+// Tier B (second dip): looser drop/stretch than the washout tier, same
+// stabilisation test. Cut off at bar 1000: dips after that in this
+// falling window rebound at most ~+14 bps and lose money after costs.
+const DROP2_BPS = 40;
+const BELOW2_EMA_BPS = 15;
+const TIER2_CUTOFF_SEQ = 1000;
 const LATE_BAR = 1200;
 const LATE_BELOW_EMA_BPS = 40;
 const LATE_MOD_BPS = -10;
@@ -64,7 +84,7 @@ const LATE_MOD_BPS = -10;
 const ENTRY_CUTOFF_SEQ = 1380;
 const MAX_SLIPPAGE_BPS = 200;
 
-type EntryVerdict = 'washout' | 'late' | 'none';
+type EntryVerdict = 'washout' | 'tier2' | 'late' | 'none';
 type ExitVerdict = 'take-profit' | 'stop-loss' | 'trailing-fade' | 'time-stop' | 'hold';
 
 interface DipBot {
@@ -119,6 +139,14 @@ function classifyEntry(bot: DipBot, close: number, seq: number): EntryVerdict {
     const drift1Bps = bpsBetween(bot.closes[n - 2]!, close);
     const stoppedFalling = drift3Bps >= MOD_BPS && drift1Bps >= LAST_BPS;
     if (dropBps >= DROP_BPS && stretchBps >= BELOW_EMA_BPS && stoppedFalling) return 'washout';
+    if (
+      seq < TIER2_CUTOFF_SEQ &&
+      dropBps >= DROP2_BPS &&
+      stretchBps >= BELOW2_EMA_BPS &&
+      stoppedFalling
+    ) {
+      return 'tier2';
+    }
   }
   if (bot.fills === 0 && seq >= LATE_BAR && n >= EMA_LONG + 1) {
     const stretchLongBps = bpsBetween(close, bot.emaLong);
