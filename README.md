@@ -22,15 +22,27 @@ that has already stopped falling, then banks the rebound quickly.
 
 **Entry (washout):** close >= 60 bps below the rolling 45-bar high, >= 25 bps
 below its 20-bar EMA, and the fall is over — the last 3 bars together are
-flat or better and the latest bar did not close down.
+no worse than -12 bps and the latest bar no worse than -6 bps.
+
+**Entry (second dip, tier B):** same stabilisation test at only >= 40 bps
+below the rolling 45-bar high and >= 15 bps below the 20-bar EMA, cut off
+at bar 1000 — this catches the window's second dip (bar ~429, a -55 bps
+dip that rebounds +139 bps from its fill). Dips after bar 1000 in this
+falling window rebound at most ~+14 bps and lose money after costs.
 
 **Entry (late safety net):** if nothing has traded by bar 1200 and the price
 sits >= 40 bps below its 60-bar EMA with stabilising bars, buy once, so the
 bot still makes its 1 guardrail trade on a race window with no washout.
 
-**Exit (whole position):** take-profit +100 bps over cost, stop-loss -200 bps,
-trailing fade (once peaked >= +80 bps, exit after giving back 35 bps), or a
+**Exit (whole position):** take-profit +140 bps over cost, stop-loss -200 bps,
+trailing fade (once peaked >= +100 bps, exit after giving back 40 bps), or a
 120-bar time stop. A 3-bar cooldown follows every exit.
+
+v2 vs v1: v1 bought bar 72 and sold at TP +100 bps, but its fill (bar 73
+open, near the trough) peaked at +152 bps — the +100 bps TP left ~50 bps
+on the table. v2 buys one bar earlier (stabilisation loosened to -12 / -6
+bps), takes profit at +140 bps, and adds tier B so the bot trades the
+second dip instead of sitting out the rest of the window after one trade.
 
 **Guardrails:** no new entry in the last 60 bars (a buy that late has no time
 for its rebound before the final flatten and is negative-EV after the ~26 bps
@@ -39,13 +51,18 @@ deterministic — no clock, no network, no randomness.
 
 ## Dev-window result (grade-local, process driver, two runs byte-identical)
 
-- Net PnL: **+9.797551 USDC** (return +0.98%)
-- Trades: 2 (1 round trip: buy bar 72, sell bar 81, +105 bps gross)
-- Max drawdown: 0.12%
-- Fees: 0.804081 USDC; net PnL at 2x fees: +8.990504 USDC
+- Net PnL: **+12.714170 USDC** (return +1.27%; v1 was +9.797551 USDC)
+- Trades: 12 (6 round trips, win rate 0.667)
+- Max drawdown: 1.02%
+- Fees: 4.854748 USDC; net PnL at 2x fees: +7.897994 USDC
 - Guardrails: met
-- result_sha256: `fb336962cd1d40f6a7636a78c4df67bb5eb2fd4d723756439d1b9d5658882c18`
-- action_log_sha256: `e3571e7e7cca011e253d433083c44985a9a37b37c68252ec4023f65cf77ae8d5`
+- result_sha256: `3eb9102d7885c7e7b0c9e16b9c6eb83f89f3df371f1f9538aa6f5090ea47ca6c`
+- action_log_sha256: `a11036556b2bf56728f4909b53daa8dd5aa1df156183e21b18191012ed902972`
+
+Variants tested and rejected (grade-local, dev window): wider TP + earlier
+entry alone (+8.085316 USDC, 4 trades) and the same plus tier B with
+looser stabilisation -10 / -5 (+5.256049 USDC) — both below v1's
++9.797551 USDC, so neither was kept.
 
 ## Files
 
